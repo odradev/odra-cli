@@ -1,15 +1,20 @@
-use std::collections::HashMap;
+#![feature(box_patterns)]
+use std::collections::{BTreeSet, HashMap};
 
-use clap::{command, Arg, ArgAction, ArgMatches, Command};
+pub use args::CommandArg;
+use clap::{command, Arg, ArgMatches, Command};
 use odra::{
-    casper_types::CLValue,
     contract_def::HasIdent,
     host::HostEnv,
     schema::{
-        casper_contract_schema::{Entrypoint, NamedCLType}, SchemaCustomTypes, SchemaEntrypoints
+        casper_contract_schema::{
+            CustomType, Entrypoint, NamedCLType, StructMember, Type, TypeName,
+        },
+        SchemaCustomTypes, SchemaEntrypoints,
     },
 };
 
+mod args;
 mod container;
 mod entry_point;
 mod types;
@@ -20,105 +25,20 @@ const CONTRACTS_SUBCOMMAND: &str = "contract";
 const SCENARIOS_SUBCOMMAND: &str = "scenario";
 const DEPLOY_SUBCOMMAND: &str = "deploy";
 
-pub trait OdraCommand {
-    fn register(&self, cmd: Command) -> Command;
-    fn name(&self) -> &str;
-    fn run(&self, args: &ArgMatches, parsers: &HashMap<String, Box<dyn Parser>>);
-}
+pub(crate) type CustomTypeSet = BTreeSet<CustomType>;
 
-pub enum OdraCliCommand {
-    Deploy(DeployCmd),
-    Scenario(ScenarioCmd),
-    Contract(ContractCmd),
-}
-
-impl OdraCommand for OdraCliCommand {
-    fn register(&self, cmd: Command) -> Command {
-        match self {
-            OdraCliCommand::Deploy(deploy) => deploy.register(cmd),
-            OdraCliCommand::Scenario(scenario) => scenario.register(cmd),
-            OdraCliCommand::Contract(contract) => contract.register(cmd),
-        }
-    }
-
-    fn name(&self) -> &str {
-        match self {
-            OdraCliCommand::Deploy(deploy) => deploy.name(),
-            OdraCliCommand::Scenario(scenario) => scenario.name(),
-            OdraCliCommand::Contract(contract) => contract.name(),
-        }
-    }
-
-    fn run(&self, args: &ArgMatches, parsers: &HashMap<String, Box<dyn Parser>>) {
-        match self {
-            OdraCliCommand::Deploy(deploy) => deploy.run(args, parsers),
-            OdraCliCommand::Scenario(scenario) => scenario.run(args, parsers),
-            OdraCliCommand::Contract(contract) => contract.run(args, parsers),
-        }
-    }
-}
-
+/// DeployScript is a trait that represents a deploy script.
+///
+/// In a deploy script, you can define the contracts that you want to deploy to the blockchain.
 pub trait DeployScript {
     fn deploy(&self, container: &mut DeployedContractsContainer, env: &HostEnv);
 }
 
-pub struct DeployCmd {
-    script: Box<dyn DeployScript>,
-}
-
-impl OdraCommand for DeployCmd {
-    fn register(&self, cmd: Command) -> Command {
-        cmd.subcommand(command!(DEPLOY_SUBCOMMAND).about("Runs the deploy script"))
-    }
-
-    fn name(&self) -> &str {
-        DEPLOY_SUBCOMMAND
-    }
-
-    fn run(&self, _args: &ArgMatches, _parsers: &HashMap<String, Box<dyn Parser>>) {
-        let mut container = DeployedContractsContainer::new();
-        let env = odra_casper_livenet_env::env();
-        self.script.deploy(&mut container, &env)
-    }
-}
-
-pub struct CommandArg {
-    pub name: String,
-    pub required: bool,
-    pub description: Option<String>,
-}
-
-impl CommandArg {
-    pub fn new(name: &str) -> Self {
-        Self {
-            name: name.to_string(),
-            required: true,
-            description: None,
-        }
-    }
-
-    pub fn optional(mut self) -> Self {
-        self.required = false;
-        self
-    }
-
-    pub fn description(mut self, description: &str) -> Self {
-        self.description = Some(description.to_string());
-        self
-    }
-}
-
-impl From<CommandArg> for Arg {
-    fn from(arg: CommandArg) -> Self {
-        Arg::new(&arg.name)
-            .long(&arg.name)
-            .action(ArgAction::Set)
-            .value_name("VALUE")
-            .required(arg.required)
-            .help(arg.description.unwrap_or_default())
-    }
-}
-
+/// Scenario is a trait that represents a custom scenario.
+///
+/// A scenario is a user-defined set of actions that can be run in the Odra CLI.
+/// If you want to run a custom scenario that calls multiple entry points,
+/// you need to implement this trait.
 pub trait Scenario {
     fn args(&self) -> Vec<CommandArg> {
         vec![]
@@ -131,14 +51,80 @@ pub trait Scenario {
     );
 }
 
-pub struct ScenarioCmd {
+/// OdraCommand is a trait that represents a command that can be run in the Odra CLI.
+trait OdraCommand {
+    fn register(&self, cmd: Command, types: &CustomTypeSet) -> Command;
+    fn name(&self) -> &str;
+    fn run(&self, args: &ArgMatches, types: &CustomTypeSet);
+}
+
+/// OdraCliCommand is an enum that represents the different commands that can be run in the Odra CLI.
+enum OdraCliCommand {
+    Deploy(DeployCmd),
+    Scenario(ScenarioCmd),
+    Contract(ContractCmd),
+}
+
+impl OdraCommand for OdraCliCommand {
+    fn register(&self, cmd: Command, types: &CustomTypeSet) -> Command {
+        match self {
+            OdraCliCommand::Deploy(deploy) => deploy.register(cmd, types),
+            OdraCliCommand::Scenario(scenario) => scenario.register(cmd, types),
+            OdraCliCommand::Contract(contract) => contract.register(cmd, types),
+        }
+    }
+
+    fn name(&self) -> &str {
+        match self {
+            OdraCliCommand::Deploy(deploy) => deploy.name(),
+            OdraCliCommand::Scenario(scenario) => scenario.name(),
+            OdraCliCommand::Contract(contract) => contract.name(),
+        }
+    }
+
+    fn run(&self, args: &ArgMatches, types: &CustomTypeSet) {
+        match self {
+            OdraCliCommand::Deploy(deploy) => deploy.run(args, types),
+            OdraCliCommand::Scenario(scenario) => scenario.run(args, types),
+            OdraCliCommand::Contract(contract) => contract.run(args, types),
+        }
+    }
+}
+
+/// DeployCmd is a struct that represents the deploy command in the Odra CLI.
+///
+/// The deploy command runs the [DeployScript].
+struct DeployCmd {
+    script: Box<dyn DeployScript>,
+}
+
+impl OdraCommand for DeployCmd {
+    fn register(&self, cmd: Command, _types: &CustomTypeSet) -> Command {
+        cmd.subcommand(command!(DEPLOY_SUBCOMMAND).about("Runs the deploy script"))
+    }
+
+    fn name(&self) -> &str {
+        DEPLOY_SUBCOMMAND
+    }
+
+    fn run(&self, _args: &ArgMatches, _types: &CustomTypeSet) {
+        let mut container = DeployedContractsContainer::new();
+        let env = odra_casper_livenet_env::env();
+        self.script.deploy(&mut container, &env)
+    }
+}
+
+/// ScenarioCmd is a struct that represents a scenario command in the Odra CLI.
+///
+/// The scenario command runs a [Scenario]. A scenario is a user-defined set of actions that can be run in the Odra CLI.
+struct ScenarioCmd {
     name: String,
     description: String,
     scenario: Box<dyn Scenario>,
 }
 
 impl OdraCommand for ScenarioCmd {
-    fn register(&self, cmd: Command) -> Command {
+    fn register(&self, cmd: Command, _types: &CustomTypeSet) -> Command {
         let mut scenario_cmd = Command::new(&self.name).about(&self.description);
         let args = self
             .scenario
@@ -157,7 +143,7 @@ impl OdraCommand for ScenarioCmd {
         &self.name
     }
 
-    fn run(&self, args: &ArgMatches, _parsers: &HashMap<String, Box<dyn Parser>>) {
+    fn run(&self, args: &ArgMatches, _types: &CustomTypeSet) {
         let container = DeployedContractsContainer::load().expect("No deployed contracts found");
         let env = odra_casper_livenet_env::env();
 
@@ -186,18 +172,21 @@ impl OdraCommand for ScenarioCmd {
     }
 }
 
-pub struct ContractCmd {
+/// ContractCmd is a struct that represents a contract command in the Odra CLI.
+///
+/// The contract command runs a contract with a given entry point.
+struct ContractCmd {
     name: String,
     commands: Vec<Box<dyn OdraCommand>>,
 }
 
 impl OdraCommand for ContractCmd {
-    fn register(&self, cmd: Command) -> Command {
+    fn register(&self, cmd: Command, types: &CustomTypeSet) -> Command {
         let mut contract_cmd = Command::new(&self.name)
             .subcommand_required(true)
             .arg_required_else_help(true);
         for cmd in &self.commands {
-            contract_cmd = cmd.register(contract_cmd);
+            contract_cmd = cmd.register(contract_cmd, types);
         }
         cmd.subcommand(contract_cmd)
     }
@@ -206,34 +195,35 @@ impl OdraCommand for ContractCmd {
         &self.name
     }
 
-    fn run(&self, args: &ArgMatches, parsers: &HashMap<String, Box<dyn Parser>>) {
+    fn run(&self, args: &ArgMatches, types: &CustomTypeSet) {
         args.subcommand().map(|(entrypoint_name, entrypoint_args)| {
             let entry_point = self
                 .commands
                 .iter()
                 .find(|cmd| cmd.name() == entrypoint_name)
                 .expect("Contract action not found");
-            entry_point.run(entrypoint_args, parsers);
+            entry_point.run(entrypoint_args, types);
         });
     }
 }
 
+/// CallCmd is a struct that represents a call command in the Odra CLI.
+///
+/// The call command runs a contract with a given entry point.
 struct CallCmd {
     contract_name: String,
     entry_point: Entrypoint,
 }
 
 impl OdraCommand for CallCmd {
-    fn register(&self, cmd: Command) -> Command {
+    fn register(&self, cmd: Command, types: &CustomTypeSet) -> Command {
         let mut ep_cmd = Command::new(&self.entry_point.name)
             .about(&self.entry_point.description.clone().unwrap_or_default());
-        for arg in &self.entry_point.arguments {
-            let arg = Arg::new(&arg.name)
-                .long(&arg.name)
-                .action(ArgAction::Set)
-                .value_name("VALUE")
-                .required(!arg.optional)
-                .help(arg.description.clone().unwrap_or_default());
+        let args = args::command_args(&self.entry_point, types)
+            .into_iter()
+            .map(Into::into)
+            .collect::<Vec<Arg>>();
+        for arg in args {
             ep_cmd = ep_cmd.arg(arg);
         }
         cmd.subcommand(ep_cmd)
@@ -243,31 +233,31 @@ impl OdraCommand for CallCmd {
         &self.entry_point.name
     }
 
-    fn run(&self, args: &ArgMatches, parsers: &HashMap<String, Box<dyn Parser>>) {
+    fn run(&self, args: &ArgMatches, types: &CustomTypeSet) {
         let env = odra_casper_livenet_env::env();
         let container = DeployedContractsContainer::load().expect("No deployed contracts found");
-        let runtime_args = types::build_args(&self.entry_point, args, parsers);
+        let runtime_args = args::compose(&self.entry_point, args, types);
         let entry_point = &self.entry_point;
         let contract_name = &self.contract_name;
+
         entry_point::call(
             &env,
             &container,
             entry_point,
             runtime_args,
             contract_name,
-            parsers,
+            types,
         );
     }
 }
 
+/// OdraCli is a struct that represents the Odra CLI.
+///
+/// The Odra CLI is a command line interface that allows users to interact with the blockchain.
 pub struct OdraCli {
     command: Command,
     commands: Vec<OdraCliCommand>,
-    parsers: HashMap<String, Box<dyn Parser>>,
-}
-
-pub trait Parser {
-    fn parse(&self, input: &str) -> CLValue;
+    custom_types: CustomTypeSet,
 }
 
 impl OdraCli {
@@ -277,7 +267,7 @@ impl OdraCli {
                 .subcommand_required(true)
                 .arg_required_else_help(true),
             commands: vec![],
-            parsers: HashMap::new(),
+            custom_types: CustomTypeSet::new(),
         }
     }
 
@@ -289,6 +279,66 @@ impl OdraCli {
 
     /// Add a contract to the CLI
     pub fn contract<T: SchemaEntrypoints + SchemaCustomTypes + HasIdent>(mut self) -> Self {
+        self.custom_types
+            .extend(T::schema_types().into_iter().filter_map(|ty| ty));
+        self.custom_types.insert(CustomType::Struct {
+            name: TypeName::new("NameMintInfo"),
+            description: None,
+            members: vec![
+                StructMember {
+                    name: "label".to_string(),
+                    description: None,
+                    ty: Type(NamedCLType::String),
+                },
+                StructMember {
+                    name: "owner".to_string(),
+                    description: None,
+                    ty: Type(NamedCLType::Key),
+                },
+                StructMember {
+                    name: "token_expiration".to_string(),
+                    description: None,
+                    ty: Type(NamedCLType::U64),
+                },
+            ],
+        });
+        self.custom_types.insert(CustomType::Struct {
+            name: TypeName::new("TokenRenewalInfo"),
+            description: None,
+            members: vec![
+                StructMember {
+                    name: "token_id".to_string(),
+                    description: None,
+                    ty: Type(NamedCLType::String),
+                },
+                StructMember {
+                    name: "token_expiration".to_string(),
+                    description: None,
+                    ty: Type(NamedCLType::U64),
+                },
+            ],
+        });
+        self.custom_types.insert(CustomType::Struct {
+            name: TypeName::new("NameTokenMetadata"),
+            description: None,
+            members: vec![
+                StructMember {
+                    name: "token_hash".to_string(),
+                    description: None,
+                    ty: Type(NamedCLType::String),
+                },
+                StructMember {
+                    name: "expiration".to_string(),
+                    description: None,
+                    ty: Type(NamedCLType::U64),
+                },
+                StructMember {
+                    name: "resolver".to_string(),
+                    description: None,
+                    ty: Type(NamedCLType::Option(Box::new(NamedCLType::Key))),
+                },
+            ],
+        });
         let commands = T::schema_entrypoints()
             .into_iter()
             .map(|entry_point| {
@@ -328,13 +378,6 @@ impl OdraCli {
         self
     }
 
-    pub fn parser(mut self, cl_type: NamedCLType, parser: impl Parser + 'static) -> Self {
-        if let NamedCLType::Custom(name) = cl_type {
-            self.parsers.insert(name, Box::new(parser));
-        };
-        self
-    }
-
     /// Build the CLI
     pub fn build(mut self) -> Self {
         let mut contracts_command = Command::new(CONTRACTS_SUBCOMMAND)
@@ -350,13 +393,13 @@ impl OdraCli {
         for cmd in &self.commands {
             match cmd {
                 OdraCliCommand::Deploy(cmd) => {
-                    self.command = cmd.register(self.command);
+                    self.command = cmd.register(self.command, &self.custom_types);
                 }
                 OdraCliCommand::Scenario(cmd) => {
-                    scenarios_command = cmd.register(scenarios_command);
+                    scenarios_command = cmd.register(scenarios_command, &self.custom_types);
                 }
                 OdraCliCommand::Contract(cmd) => {
-                    contracts_command = cmd.register(contracts_command)
+                    contracts_command = cmd.register(contracts_command, &self.custom_types);
                 }
             }
         }
@@ -370,12 +413,13 @@ impl OdraCli {
     pub fn run(self) {
         let matches = self.command.get_matches();
 
-        matches.subcommand().map(|(subcommand, sub_matches)| {
-            match subcommand {
+        matches
+            .subcommand()
+            .map(|(subcommand, sub_matches)| match subcommand {
                 DEPLOY_SUBCOMMAND => {
                     find_deploy(&self.commands)
                         .expect("Deploy command not found")
-                        .run(sub_matches, &self.parsers);
+                        .run(sub_matches, &self.custom_types);
                 }
                 CONTRACTS_SUBCOMMAND => {
                     sub_matches
@@ -383,21 +427,20 @@ impl OdraCli {
                         .map(|(contract_name, entrypoint_matches)| {
                             find_contract(&self.commands, contract_name)
                                 .expect("Contract not found")
-                                .run(entrypoint_matches, &self.parsers);
+                                .run(entrypoint_matches, &self.custom_types);
                         });
                 }
                 SCENARIOS_SUBCOMMAND => {
                     sub_matches.subcommand().map(|(subcommand, sub_matches)| {
                         find_scenario(&self.commands, subcommand)
                             .expect("Scenario not found")
-                            .run(sub_matches, &self.parsers);
+                            .run(sub_matches, &self.custom_types);
                     });
                 }
                 _ => {
                     panic!("Unknown subcommand");
                 }
-            }
-        });
+            });
     }
 }
 

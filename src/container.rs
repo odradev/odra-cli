@@ -37,14 +37,15 @@ impl DeployedContractsContainer {
         self.update();
     }
 
-
-    pub fn get_ref<T: EntryPointsCallerProvider + HostRef + HasIdent + 'static>(&self, env: &HostEnv) -> Option<T> {
+    pub fn get_ref<T: EntryPointsCallerProvider + HostRef + HasIdent + 'static>(
+        &self,
+        env: &HostEnv,
+    ) -> Option<T> {
         self.contracts
             .iter()
             .find(|c| c.name == T::ident())
             .map(|c| {
                 let address = Address::from_str(&c.package_hash).unwrap();
-                dbg!("registering contract");
                 T::load(env, address)
             })
     }
