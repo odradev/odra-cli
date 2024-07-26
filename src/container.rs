@@ -112,6 +112,6 @@ impl DeployedContractsContainer {
 /// This struct represents a contract in the `deployed_contracts.toml` file.
 #[derive(Deserialize, Serialize, Debug, Clone)]
 struct Contract {
-    pub name: String,
-    pub package_hash: String,
+    name: String,
+    package_hash: String,
 }

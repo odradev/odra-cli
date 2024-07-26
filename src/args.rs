@@ -2,7 +2,10 @@ use std::str::FromStr;
 
 use clap::{Arg, ArgAction, ArgMatches};
 use odra::{
-    casper_types::{bytesrepr::{FromBytes, ToBytes}, CLType, CLValue, RuntimeArgs},
+    casper_types::{
+        bytesrepr::{FromBytes, ToBytes},
+        CLType, CLValue, RuntimeArgs,
+    },
     schema::casper_contract_schema::{Argument, CustomType, Entrypoint, NamedCLType, Type},
 };
 use serde_json::Value;
@@ -51,11 +54,12 @@ impl CommandArg {
     }
 }
 
-pub fn command_args(entry_point: &Entrypoint, types: &CustomTypeSet) -> Vec<CommandArg> {
+pub fn entry_point_args(entry_point: &Entrypoint, types: &CustomTypeSet) -> Vec<Arg> {
     entry_point
         .arguments
         .iter()
         .flat_map(|arg| flat_arg(arg, types, false))
+        .map(Into::into)
         .collect()
 }
 
@@ -155,9 +159,11 @@ pub fn compose(entry_point: &Entrypoint, args: &ArgMatches, types: &CustomTypeSe
                 }
                 match ty {
                     NamedCLType::List(inner) => {
-                        let input = input.iter().map(|v| {
-                            v.split(',').collect::<Vec<_>>()
-                        }).flatten().collect();
+                        let input = input
+                            .iter()
+                            .map(|v| v.split(',').collect::<Vec<_>>())
+                            .flatten()
+                            .collect();
                         let bytes = types::vec_into_bytes(inner, input);
                         let cl_type =
                             CLType::List(Box::new(types::named_cl_type_to_cl_type(inner)));
@@ -306,15 +312,25 @@ pub fn decode<'a>(bytes: &'a [u8], ty: &Type, types: &'a CustomTypeSet) -> (Stri
     }
 }
 
+pub fn attached_value_arg() -> Arg {
+    Arg::new("__attached_value")
+        .help("The amount of CSPR attached to the call")
+        .long("__attached_value")
+        .required(false)
+        .value_name("VALUE")
+        .action(ArgAction::Set)
+}
+
 #[cfg(test)]
 mod t {
     use clap::{Arg, Command};
     use odra::{
-        args::Maybe, casper_types::{bytesrepr::Bytes, runtime_args, RuntimeArgs, U512}, schema::{
-            casper_contract_schema::{
-                Access, Argument, CustomType, Entrypoint, NamedCLType, StructMember, Type, TypeName,
-            }, SchemaCustomTypes
-        }, Address
+        casper_types::{bytesrepr::Bytes, runtime_args, RuntimeArgs, U512},
+        schema::{
+            casper_contract_schema::{Access, Argument, Entrypoint, NamedCLType, Type},
+            SchemaCustomTypes,
+        },
+        Address,
     };
 
     use crate::{CommandArg, CustomTypeSet};
@@ -373,7 +389,11 @@ mod t {
         let entry_point = entry_point();
         let custom_types = custom_types();
 
-        let args = super::command_args(&entry_point, &custom_types);
+        let args = entry_point
+            .arguments
+            .iter()
+            .flat_map(|arg| super::flat_arg(arg, &custom_types, false))
+            .collect::<Vec<_>>();
 
         let expected = vec![
             CommandArg::internal("voucher.payment.buyer", "", NamedCLType::Key, true, false),
@@ -524,50 +544,51 @@ mod t {
 
     fn custom_types() -> CustomTypeSet {
         let mut custom_types = CustomTypeSet::new();
-        custom_types.insert(CustomType::Struct {
-            name: TypeName::new("NameMintInfo"),
-            description: None,
-            members: vec![
-                StructMember {
-                    name: "label".to_string(),
-                    description: None,
-                    ty: Type(NamedCLType::String),
-                },
-                StructMember {
-                    name: "owner".to_string(),
-                    description: None,
-                    ty: Type(NamedCLType::Key),
-                },
-                StructMember {
-                    name: "token_expiration".to_string(),
-                    description: None,
-                    ty: Type(NamedCLType::U64),
-                },
-            ],
-        });
-        custom_types.insert(CustomType::Struct {
-            name: TypeName::new("NameTokenMetadata"),
-            description: None,
-            members: vec![
-                StructMember {
-                    name: "token_hash".to_string(),
-                    description: None,
-                    ty: Type(NamedCLType::String),
-                },
-                StructMember {
-                    name: "expiration".to_string(),
-                    description: None,
-                    ty: Type(NamedCLType::U64),
-                },
-                StructMember {
-                    name: "resolver".to_string(),
-                    description: None,
-                    ty: Type(NamedCLType::Option(Box::new(NamedCLType::Key))),
-                },
-            ],
-        });
+        // custom_types.insert(CustomType::Struct {
+        //     name: TypeName::new("NameMintInfo"),
+        //     description: None,
+        //     members: vec![
+        //         StructMember {
+        //             name: "label".to_string(),
+        //             description: None,
+        //             ty: Type(NamedCLType::String),
+        //         },
+        //         StructMember {
+        //             name: "owner".to_string(),
+        //             description: None,
+        //             ty: Type(NamedCLType::Key),
+        //         },
+        //         StructMember {
+        //             name: "token_expiration".to_string(),
+        //             description: None,
+        //             ty: Type(NamedCLType::U64),
+        //         },
+        //     ],
+        // });
+        // custom_types.insert(CustomType::Struct {
+        //     name: TypeName::new("NameTokenMetadata"),
+        //     description: None,
+        //     members: vec![
+        //         StructMember {
+        //             name: "token_hash".to_string(),
+        //             description: None,
+        //             ty: Type(NamedCLType::String),
+        //         },
+        //         StructMember {
+        //             name: "expiration".to_string(),
+        //             description: None,
+        //             ty: Type(NamedCLType::U64),
+        //         },
+        //         StructMember {
+        //             name: "resolver".to_string(),
+        //             description: None,
+        //             ty: Type(NamedCLType::Option(Box::new(NamedCLType::Key))),
+        //         },
+        //     ],
+        // });
         PaymentVoucher::schema_types().into_iter().for_each(|e| {
             if let Some(ty) = e {
+                dbg!(&ty);
                 custom_types.insert(ty);
             }
         });
