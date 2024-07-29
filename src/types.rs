@@ -24,6 +24,12 @@ macro_rules! call_to_bytes {
     };
 }
 
+macro_rules! big_int_to_bytes {
+    ($ty:ident, $value:ident) => {
+        $ty::from_dec_str($value).unwrap().to_bytes().unwrap()
+    };
+}
+
 fn parse_value<T: FromStr>(value: &str) -> T
 where
     <T as FromStr>::Err: Debug,
@@ -91,9 +97,9 @@ pub(crate) fn into_bytes(ty: &NamedCLType, input: &str) -> Vec<u8> {
         NamedCLType::U8 => call_to_bytes!(u8, input),
         NamedCLType::U32 => call_to_bytes!(u32, input),
         NamedCLType::U64 => call_to_bytes!(u64, input),
-        NamedCLType::U128 => call_to_bytes!(U128, input),
-        NamedCLType::U256 => call_to_bytes!(U256, input),
-        NamedCLType::U512 => call_to_bytes!(U512, input),
+        NamedCLType::U128 => big_int_to_bytes!(U128, input),
+        NamedCLType::U256 => big_int_to_bytes!(U256, input),
+        NamedCLType::U512 => big_int_to_bytes!(U512, input),
         NamedCLType::String => call_to_bytes!(String, input),
         NamedCLType::Key => call_to_bytes!(Address, input),
         NamedCLType::URef => URef::from_formatted_str(input).unwrap().to_bytes().unwrap(),
