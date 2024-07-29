@@ -67,7 +67,7 @@ impl From<CommandArg> for Arg {
     fn from(arg: CommandArg) -> Self {
         let result = Arg::new(&arg.name)
             .long(arg.name)
-            .value_name("VALUE")
+            .value_name(format!("{:?}", arg.ty))
             .required(arg.required)
             .help(arg.description);
 
@@ -268,29 +268,32 @@ pub fn decode<'a>(bytes: &'a [u8], ty: &Type, types: &'a CustomTypeSet) -> (Stri
                 })
                 .expect("Type not found");
             let mut bytes = bytes;
-            let mut decoded = "{ ".to_string();
 
             match matching_type {
                 CustomType::Struct { members, .. } => {
+                    let mut decoded = "{ ".to_string();
                     for field in members {
                         let (value, rem) = decode(bytes, &field.ty, types);
                         decoded.push_str(format!(" \"{}\": \"{}\",", field.name, value).as_str());
                         bytes = rem;
                     }
+                    decoded.pop();
+                    decoded.push_str(" }");
+                    let json = Value::from_str(&decoded).unwrap();
+                    (serde_json::to_string_pretty(&json).unwrap(), bytes)
                 }
                 CustomType::Enum { variants, .. } => {
-                    for variant in variants {
-                        let (value, rem) = decode(bytes, &variant.ty, types);
-                        decoded.push_str(format!(" \"{}\": \"{}\",", variant.name, value).as_str());
-                        bytes = rem;
-                    }
+                    let ty = Type(NamedCLType::U8);
+                    let (value, rem) = decode(bytes, &ty, types);
+
+                    let variant = variants
+                        .iter()
+                        .find(|v| v.discriminant == value.parse::<u16>().unwrap())
+                        .expect("Variant not found");
+                    bytes = rem;
+                    (variant.name.clone(), bytes)
                 }
             }
-            decoded.pop();
-            decoded.push_str(" }");
-
-            let json = Value::from_str(&decoded).unwrap();
-            (serde_json::to_string_pretty(&json).unwrap(), bytes)
         }
         NamedCLType::List(inner) => {
             let ty = Type(*inner.clone());

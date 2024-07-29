@@ -255,10 +255,16 @@ impl OdraCli {
 
         // build entry points commands
         let mut contract_cmd = Command::new(&contract_name)
-            .about("Commands for interacting with the contract")
+            .about(format!(
+                "Commands for interacting with the {} contract",
+                &contract_name
+            ))
             .subcommand_required(true)
             .arg_required_else_help(true);
         for entry_point in T::schema_entrypoints() {
+            if entry_point.name == "init" {
+                continue;
+            }
             let mut ep_cmd = Command::new(&entry_point.name)
                 .about(&entry_point.description.clone().unwrap_or_default());
             for arg in args::entry_point_args(&entry_point, &self.custom_types) {
