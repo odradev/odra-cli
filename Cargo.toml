@@ -18,5 +18,4 @@ serde_json = { version = "=1.0.113", default-features = false }
 serde_derive = { version = "=1.0.195", features = ["default"] }
 toml = "0.8.13"
 project-root = "0.2.2"
-tokio = { version = "1.38.1" }
 pretty_assertions = "1.4.0"
