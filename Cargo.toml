@@ -7,11 +7,8 @@ edition = "2021"
 [dependencies]
 clap = { version = "4.5.4", features = ["derive", "cargo", "string"] }
 prettycli = "0.1.1"
-# odra = { git = "https://github.com/odradev/odra", branch = "fix/cep78-more-fns", features = [], default-features = false }
-# odra-casper-livenet-env = { git = "https://github.com/odradev/odra", branch = "fix/cep78-more-fns" }
-# odra-casper-rpc-client = { git = "https://github.com/odradev/odra", branch = "fix/cep78-more-fns" }
-odra = { path = "../../odra/odra/odra", features = [], default-features = false }
-odra-casper-livenet-env = { path = "../../odra/odra/odra-casper/livenet-env" }
+odra = { git = "https://github.com/odradev/odra", branch = "feature/group-all-derived-module-structs--into-single-trait", features = [], default-features = false }
+odra-casper-livenet-env = { git = "https://github.com/odradev/odra", branch = "feature/group-all-derived-module-structs--into-single-trait" }
 chrono = { version = "0.4", features = ["serde"] }
 serde = { version = "=1.0.195", default-features = false }
 serde_json = { version = "=1.0.113", default-features = false }

@@ -145,7 +145,6 @@ pub(crate) fn into_bytes(ty: &NamedCLType, input: &str) -> Vec<u8> {
             result
         }
         NamedCLType::Unit => vec![],
-        NamedCLType::Custom(_) => unreachable!("should not be here"),
         NamedCLType::Map { key, value } => {
             todo!();
         }
@@ -155,6 +154,7 @@ pub(crate) fn into_bytes(ty: &NamedCLType, input: &str) -> Vec<u8> {
         NamedCLType::ByteArray(_) => {
             todo!();
         }
+        NamedCLType::Custom(_) => unreachable!("should not be here"),
     }
 }
 

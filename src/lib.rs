@@ -7,19 +7,19 @@ use std::{
 pub use args::CommandArg;
 use clap::{command, Arg, ArgMatches, Command};
 use odra::{
+    casper_types::bytesrepr::FromBytes,
     contract_def::HasIdent,
     host::{EntryPointsCallerProvider, HostEnv},
     schema::{
         casper_contract_schema::{CustomType, Entrypoint},
-        SchemaCustomTypes, SchemaEntrypoints,
+        NamedCLTyped, SchemaCustomTypes, SchemaEntrypoints,
     },
-    Contract,
+    OdraContract,
 };
 
 mod args;
 mod container;
 mod entry_point;
-mod tmp;
 mod types;
 
 pub use container::DeployedContractsContainer;
@@ -50,8 +50,38 @@ pub trait Scenario: Any {
         &self,
         container: DeployedContractsContainer,
         env: &HostEnv,
-        args: HashMap<String, String>,
+        args: HashMap<String, ScenarioArg>,
     );
+}
+
+pub enum ScenarioArg {
+    Single(String),
+    Many(Vec<String>),
+}
+
+impl ScenarioArg {
+    pub fn get_single<T: NamedCLTyped + FromBytes>(&self) -> T {
+        match self {
+            ScenarioArg::Single(value) => {
+                let bytes = types::into_bytes(&T::ty(), value);
+                T::from_bytes(&bytes).expect("Failed to parse value").0
+            }
+            _ => panic!("Expected single value"),
+        }
+    }
+
+    pub fn get_many<T: NamedCLTyped + FromBytes>(&self) -> Vec<T> {
+        match self {
+            ScenarioArg::Many(values) => values
+                .into_iter()
+                .map(|value| {
+                    let bytes = types::into_bytes(&T::ty(), &value);
+                    T::from_bytes(&bytes).expect("Failed to parse value").0
+                })
+                .collect(),
+            _ => panic!("Expected multiple values"),
+        }
+    }
 }
 
 pub trait ScenarioMetadata {
@@ -129,20 +159,26 @@ impl OdraCommand for ScenarioCmd {
             .args()
             .into_iter()
             .filter_map(|arg| {
-                let value = args.get_one::<String>(arg.name.as_str());
-                if arg.required && value.is_none() {
+                let arg_name = &arg.name;
+                // let value = args.get_one::<String>(arg_name);
+                let values = args.get_many::<String>(arg_name);
+
+                if arg.required && values.is_none() {
                     panic!("Missing argument: {}", arg.name);
                 }
-                if value.is_none() {
+                if values.is_none() {
                     return None;
                 }
-                Some((
-                    arg.name.clone(),
-                    // TODO: handle get_many
-                    args.get_one::<String>(arg.name.as_str())
-                        .expect("Missing argument")
-                        .to_string(),
-                ))
+                let values = values
+                    .expect("Arg not found")
+                    .map(|v| v.to_string())
+                    .collect::<Vec<_>>();
+                let scenario_arg = match arg.is_list_element {
+                    true => ScenarioArg::Many(values),
+                    false => ScenarioArg::Single(values[0].clone()),
+                };
+
+                Some((arg_name.clone(), scenario_arg))
             })
             .collect();
 
@@ -239,7 +275,7 @@ impl OdraCli {
     }
 
     /// Add a contract to the CLI
-    pub fn contract<T: SchemaEntrypoints + SchemaCustomTypes + Contract>(mut self) -> Self {
+    pub fn contract<T: SchemaEntrypoints + SchemaCustomTypes + OdraContract>(mut self) -> Self {
         let contract_name = T::HostRef::ident();
         if let Some(container) = DeployedContractsContainer::load() {
             let caller = T::HostRef::entry_points_caller(&self.host_env);
@@ -251,7 +287,6 @@ impl OdraCli {
         }
         self.custom_types
             .extend(T::schema_types().into_iter().filter_map(|ty| ty));
-        tmp::register_missing_types(&mut self.custom_types);
 
         // build entry points commands
         let mut contract_cmd = Command::new(&contract_name)

@@ -1,5 +1,4 @@
-#![allow(dead_code, unused_variables)]
-use clap::{ArgMatches, Command};
+use clap::ArgMatches;
 use odra::{
     casper_types::U512,
     host::HostEnv,
@@ -10,14 +9,6 @@ use odra::{
 use crate::{args, CustomTypeSet, DeployedContractsContainer};
 
 pub const DEFAULT_GAS: u64 = 20_000_000_000;
-
-pub struct WrappedEntrypoint(pub Entrypoint);
-
-impl From<WrappedEntrypoint> for Command {
-    fn from(value: WrappedEntrypoint) -> Self {
-        todo!()
-    }
-}
 
 pub fn call(
     env: &HostEnv,

@@ -3,8 +3,8 @@ use std::{fs::File, io::Write, path::PathBuf, str::FromStr};
 use chrono::{DateTime, SecondsFormat, Utc};
 use odra::{
     contract_def::HasIdent,
-    host::{EntryPointsCallerProvider, HostEnv, HostRef, HostRefLoader},
-    Address,
+    host::{HostEnv, HostRef, HostRefLoader},
+    Address, OdraContract,
 };
 use serde_derive::{Deserialize, Serialize};
 
@@ -14,7 +14,7 @@ const DEPLOYED_CONTRACTS_FILE: &str = "resources/deployed_contracts.toml";
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct DeployedContractsContainer {
     time: String,
-    contracts: Vec<Contract>,
+    contracts: Vec<DeployedContract>,
 }
 
 impl DeployedContractsContainer {
@@ -30,24 +30,18 @@ impl DeployedContractsContainer {
 
     /// Add contract to the list.
     pub fn add_contract<T: HostRef + HasIdent>(&mut self, contract: &T) {
-        self.contracts.push(Contract {
-            name: T::ident(),
-            package_hash: contract.address().to_string(),
-        });
+        self.contracts
+            .push(DeployedContract::new::<T>(contract.address()));
         self.update();
     }
 
-    pub fn get_ref<T: EntryPointsCallerProvider + HostRef + HasIdent + 'static>(
-        &self,
-        env: &HostEnv,
-    ) -> Option<T> {
+    pub fn get_ref<T: OdraContract + 'static>(&self, env: &HostEnv) -> Option<T::HostRef> {
         self.contracts
             .iter()
-            .find(|c| c.name == T::ident())
-            .map(|c| {
-                let address = Address::from_str(&c.package_hash).unwrap();
-                T::load(env, address)
-            })
+            .find(|c| c.name == T::HostRef::ident())
+            .map(|c| Address::from_str(&c.package_hash).ok())
+            .map(|opt| opt.map(|addr| <T as HostRefLoader<T::HostRef>>::load(env, addr)))
+            .flatten()
     }
 
     /// Return contract address.
@@ -55,7 +49,8 @@ impl DeployedContractsContainer {
         self.contracts
             .iter()
             .find(|c| c.name == name)
-            .map(|c| Address::from_str(&c.package_hash).unwrap())
+            .map(|c| Address::from_str(&c.package_hash).ok())
+            .flatten()
     }
 
     /// Return creation time.
@@ -111,7 +106,16 @@ impl DeployedContractsContainer {
 
 /// This struct represents a contract in the `deployed_contracts.toml` file.
 #[derive(Deserialize, Serialize, Debug, Clone)]
-struct Contract {
+struct DeployedContract {
     name: String,
     package_hash: String,
+}
+
+impl DeployedContract {
+    fn new<T: HasIdent>(address: &Address) -> Self {
+        Self {
+            name: T::ident(),
+            package_hash: address.to_string(),
+        }
+    }
 }

@@ -398,71 +398,17 @@ mod t {
             .flat_map(|arg| super::flat_arg(arg, &custom_types, false))
             .collect::<Vec<_>>();
 
-        let expected = vec![
-            CommandArg::internal("voucher.payment.buyer", "", NamedCLType::Key, true, false),
-            CommandArg::internal(
-                "voucher.payment.payment_id",
-                "",
-                NamedCLType::String,
-                true,
-                false,
-            ),
-            CommandArg::internal("voucher.payment.amount", "", NamedCLType::U512, true, false),
-            CommandArg::internal("voucher.names.label", "", NamedCLType::String, true, true),
-            CommandArg::internal("voucher.names.owner", "", NamedCLType::Key, true, true),
-            CommandArg::internal(
-                "voucher.names.token_expiration",
-                "",
-                NamedCLType::U64,
-                true,
-                true,
-            ),
-            CommandArg::internal(
-                "voucher.voucher_expiration",
-                "",
-                NamedCLType::U64,
-                true,
-                false,
-            ),
-            CommandArg::internal("signature", "", NamedCLType::U8, true, true),
-        ];
+        let expected = command_args();
         pretty_assertions::assert_eq!(args, expected);
     }
 
     #[test]
     fn test_compose() {
         let entry_point = entry_point();
-        let args = vec![
-            CommandArg::internal("voucher.payment.buyer", "", NamedCLType::Key, true, false),
-            CommandArg::internal(
-                "voucher.payment.payment_id",
-                "",
-                NamedCLType::String,
-                true,
-                false,
-            ),
-            CommandArg::internal("voucher.payment.amount", "", NamedCLType::U512, true, false),
-            CommandArg::internal("voucher.names.label", "", NamedCLType::String, true, true),
-            CommandArg::internal("voucher.names.owner", "", NamedCLType::Key, true, true),
-            CommandArg::internal(
-                "voucher.names.token_expiration",
-                "",
-                NamedCLType::U64,
-                true,
-                true,
-            ),
-            CommandArg::internal(
-                "voucher.voucher_expiration",
-                "",
-                NamedCLType::U64,
-                true,
-                false,
-            ),
-            CommandArg::internal("signature", "", NamedCLType::U8, true, true),
-        ]
-        .into_iter()
-        .map(Into::into)
-        .collect::<Vec<Arg>>();
+        let args = command_args()
+            .into_iter()
+            .map(Into::into)
+            .collect::<Vec<Arg>>();
         let mut cmd = Command::new("myprog");
         for a in args {
             cmd = cmd.arg(a);
@@ -499,7 +445,7 @@ mod t {
                 payment: PaymentInfo {
                     buyer: "hash-56fef1f62d86ab68655c2a5d1c8b9ed8e60d5f7e59736e9d4c215a40b10f4a22".parse().unwrap(),
                     payment_id: "id_001".parse().unwrap(),
-                    amount: "666".parse().unwrap()
+                    amount: U512::from_dec_str("666").unwrap()
                  },
                 names: vec![
                     NameMintInfo {
@@ -526,18 +472,16 @@ mod t {
             description: None,
             is_mutable: false,
             arguments: vec![
-                Argument {
-                    name: "voucher".to_string(),
-                    ty: Type(NamedCLType::Custom("PaymentVoucher".to_string())),
-                    optional: false,
-                    description: None,
-                },
-                Argument {
-                    name: "signature".to_string(),
-                    ty: Type(NamedCLType::List(Box::new(NamedCLType::U8))),
-                    optional: false,
-                    description: None,
-                },
+                Argument::new(
+                    "voucher",
+                    "",
+                    NamedCLType::Custom("PaymentVoucher".to_string()),
+                ),
+                Argument::new(
+                    "signature",
+                    "",
+                    NamedCLType::List(Box::new(NamedCLType::U8)),
+                ),
             ],
             return_ty: Type(NamedCLType::Bool),
             is_contract_context: true,
@@ -545,56 +489,38 @@ mod t {
         }
     }
 
+    fn command_args() -> Vec<CommandArg> {
+        vec![
+            CommandArg::internal("voucher.payment.buyer", "", NamedCLType::Key, true, false),
+            CommandArg::internal(
+                "voucher.payment.payment_id",
+                "",
+                NamedCLType::String,
+                true,
+                false,
+            ),
+            CommandArg::internal("voucher.payment.amount", "", NamedCLType::U512, true, false),
+            CommandArg::internal("voucher.names.label", "", NamedCLType::String, true, true),
+            CommandArg::internal("voucher.names.owner", "", NamedCLType::Key, true, true),
+            CommandArg::internal(
+                "voucher.names.token_expiration",
+                "",
+                NamedCLType::U64,
+                true,
+                true,
+            ),
+            CommandArg::internal(
+                "voucher.voucher_expiration",
+                "",
+                NamedCLType::U64,
+                true,
+                false,
+            ),
+            CommandArg::internal("signature", "", NamedCLType::U8, true, true),
+        ]
+    }
+
     fn custom_types() -> CustomTypeSet {
-        let mut custom_types = CustomTypeSet::new();
-        // custom_types.insert(CustomType::Struct {
-        //     name: TypeName::new("NameMintInfo"),
-        //     description: None,
-        //     members: vec![
-        //         StructMember {
-        //             name: "label".to_string(),
-        //             description: None,
-        //             ty: Type(NamedCLType::String),
-        //         },
-        //         StructMember {
-        //             name: "owner".to_string(),
-        //             description: None,
-        //             ty: Type(NamedCLType::Key),
-        //         },
-        //         StructMember {
-        //             name: "token_expiration".to_string(),
-        //             description: None,
-        //             ty: Type(NamedCLType::U64),
-        //         },
-        //     ],
-        // });
-        // custom_types.insert(CustomType::Struct {
-        //     name: TypeName::new("NameTokenMetadata"),
-        //     description: None,
-        //     members: vec![
-        //         StructMember {
-        //             name: "token_hash".to_string(),
-        //             description: None,
-        //             ty: Type(NamedCLType::String),
-        //         },
-        //         StructMember {
-        //             name: "expiration".to_string(),
-        //             description: None,
-        //             ty: Type(NamedCLType::U64),
-        //         },
-        //         StructMember {
-        //             name: "resolver".to_string(),
-        //             description: None,
-        //             ty: Type(NamedCLType::Option(Box::new(NamedCLType::Key))),
-        //         },
-        //     ],
-        // });
-        PaymentVoucher::schema_types().into_iter().for_each(|e| {
-            if let Some(ty) = e {
-                dbg!(&ty);
-                custom_types.insert(ty);
-            }
-        });
-        custom_types
+        CustomTypeSet::from_iter(PaymentVoucher::schema_types().into_iter().filter_map(|t| t))
     }
 }
