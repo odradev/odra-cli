@@ -1,3 +1,4 @@
+use anyhow::Result;
 use clap::ArgMatches;
 use odra::{
     casper_types::U512,
@@ -16,7 +17,7 @@ pub fn call(
     entry_point: &Entrypoint,
     args: &ArgMatches,
     types: &CustomTypeSet,
-) {
+) -> Result<String> {
     let container = DeployedContractsContainer::load().expect("No deployed contracts found");
     let amount = args
         .try_get_one::<String>("__attached_value")
@@ -39,14 +40,14 @@ pub fn call(
     if is_mut {
         env.set_gas(DEFAULT_GAS);
     }
-    let result = env
-        .raw_call_contract(contract_address, call_def, use_proxy)
-        .map(|bytes| args::decode(bytes.inner_bytes(), ty, types).0);
-    match result {
-        Ok(value) => {
-            prettycli::info("Result");
-            prettycli::info(&value);
-        }
-        Err(e) => prettycli::error(&format!("Error: {:?}", e)),
-    }
+    env.raw_call_contract(contract_address, call_def, use_proxy)
+        .map(|bytes| args::decode(bytes.inner_bytes(), ty, types).0)
+        .map_err(|e| anyhow::anyhow!("Error: {:?}", e))
+    // match result {
+    //     Ok(value) => {
+    //         prettycli::info("Result");
+    //         prettycli::info(&value);
+    //     }
+    //     Err(e) => prettycli::error(&format!("Error: {:?}", e)),
+    // }
 }

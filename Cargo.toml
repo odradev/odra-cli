@@ -16,3 +16,5 @@ serde_derive = { version = "=1.0.195", features = ["default"] }
 toml = "0.8.13"
 project-root = "0.2.2"
 pretty_assertions = "1.4.0"
+anyhow = "1.0.86"
+thiserror = "1.0.30"
