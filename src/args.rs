@@ -12,6 +12,7 @@ use serde_json::Value;
 
 use crate::{types, CustomTypeSet};
 
+/// A typed command argument.
 #[derive(Debug, PartialEq)]
 pub struct CommandArg {
     pub name: String,
@@ -22,22 +23,7 @@ pub struct CommandArg {
 }
 
 impl CommandArg {
-    pub fn new(name: &str, description: &str, required: bool) -> Self {
-        Self {
-            name: name.to_string(),
-            required,
-            description: description.to_string(),
-            ty: NamedCLType::Unit,
-            is_list_element: false,
-        }
-    }
-
-    pub fn list_element(mut self) -> Self {
-        self.is_list_element = true;
-        self
-    }
-
-    fn internal(
+    pub fn new(
         name: &str,
         description: &str,
         ty: NamedCLType,
@@ -127,7 +113,7 @@ fn flat_arg(arg: &Argument, types: &CustomTypeSet, is_list_element: bool) -> Vec
             flat_arg(&arg, types, true)
         }
         _ => {
-            vec![CommandArg::internal(
+            vec![CommandArg::new(
                 &arg.name,
                 &arg.description.clone().unwrap_or_default(),
                 arg.ty.0.clone(),
@@ -336,7 +322,7 @@ mod t {
         Address,
     };
 
-    use crate::{CommandArg, CustomTypeSet};
+    use crate::{args::CommandArg, CustomTypeSet};
 
     #[odra::odra_type]
     pub struct NameTokenMetadata {
@@ -491,32 +477,32 @@ mod t {
 
     fn command_args() -> Vec<CommandArg> {
         vec![
-            CommandArg::internal("voucher.payment.buyer", "", NamedCLType::Key, true, false),
-            CommandArg::internal(
+            CommandArg::new("voucher.payment.buyer", "", NamedCLType::Key, true, false),
+            CommandArg::new(
                 "voucher.payment.payment_id",
                 "",
                 NamedCLType::String,
                 true,
                 false,
             ),
-            CommandArg::internal("voucher.payment.amount", "", NamedCLType::U512, true, false),
-            CommandArg::internal("voucher.names.label", "", NamedCLType::String, true, true),
-            CommandArg::internal("voucher.names.owner", "", NamedCLType::Key, true, true),
-            CommandArg::internal(
+            CommandArg::new("voucher.payment.amount", "", NamedCLType::U512, true, false),
+            CommandArg::new("voucher.names.label", "", NamedCLType::String, true, true),
+            CommandArg::new("voucher.names.owner", "", NamedCLType::Key, true, true),
+            CommandArg::new(
                 "voucher.names.token_expiration",
                 "",
                 NamedCLType::U64,
                 true,
                 true,
             ),
-            CommandArg::internal(
+            CommandArg::new(
                 "voucher.voucher_expiration",
                 "",
                 NamedCLType::U64,
                 true,
                 false,
             ),
-            CommandArg::internal("signature", "", NamedCLType::U8, true, true),
+            CommandArg::new("signature", "", NamedCLType::U8, true, true),
         ]
     }
 

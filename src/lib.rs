@@ -1,9 +1,77 @@
+//! A rust library for building command line interfaces for Odra smart contracts.
+//!
+//! The Odra CLI is a command line interface built on top of the [clap] crate
+//! that allows users to interact with smart contracts.
+//!
+//! ## Example
+//! ```
+//! use odra::prelude::*;
+//!
+//! #[odra::module]
+//! struct MyContract;
+//!
+//! #[odra::module]
+//! impl MyContract {
+//!     pub fn init(&mut self) {}
+//!
+//!     pub fn my_entry_point(&mut self, arg: String) {}
+//! }
+//!
+//! struct Deploy;
+//!
+//! impl odra_cli::DeployScript for Deploy {
+//!     fn deploy(
+//!         &self,
+//!         env: &odra::host::HostEnv,
+//!         container: &mut odra_cli::DeployedContractsContainer
+//!     ) -> Result<(), odra_cli::DeployError> {
+//!         env.set_gas(50_000_000_000);
+//!
+//!         let office = MyContract::try_deploy(env, odra::host::NoArgs)?;
+//!         container.add_contract(&office)?;
+//!
+//!         Ok(())
+//!     }
+//! }
+//!
+//! struct MyScenario;
+//!
+//! impl odra_cli::ScenarioMetadata for MyScenario {
+//!     const NAME: &'static str = "my-scenario";
+//!
+//!     const DESCRIPTION: &'static str = "My custom scenario";
+//! }
+//!
+//! impl odra_cli::Scenario for MyScenario {
+//!      fn run(
+//!         &self,
+//!         env: &odra::host::HostEnv,
+//!         container: odra_cli::DeployedContractsContainer,
+//!         args: odra_cli::ScenarioArgs
+//!      ) -> Result<(), odra_cli::ScenarioError> {
+//!        Ok(())
+//!      }
+//! }
+//!
+//! fn main() {
+//!     let cli = odra_cli::OdraCli::new()
+//!         .about("Odra CLI")
+//!         .deploy(Deploy)
+//!         .contract::<MyContract>()
+//!         // .contract::<AnotherContract>()
+//!         .scenario(MyScenario)
+//!         // .scenario(AnotherScenario)
+//!         .build();
+//!     //cli.run();
+//! }
+//! ```
+
 #![feature(box_patterns, error_generic_member_access)]
 use std::collections::BTreeSet;
 
-pub use args::CommandArg;
 use clap::{command, Arg, Command};
 use cmd::{OdraCliCommand, OdraCommand};
+use deploy::DeployScript;
 use odra::{
     contract_def::HasIdent,
     host::{EntryPointsCallerProvider, HostEnv},
@@ -17,11 +85,9 @@ mod container;
 mod entry_point;
 mod types;
 
-pub use cmd::{
-    deploy::{DeployError, DeployScript},
-    scenario::{Scenario, ScenarioArgs, ScenarioError, ScenarioMetadata},
-};
 pub use container::DeployedContractsContainer;
+pub use args::CommandArg;
+use scenario::{Scenario, ScenarioMetadata};
 
 const CONTRACTS_SUBCOMMAND: &str = "contract";
 const SCENARIOS_SUBCOMMAND: &str = "scenario";
@@ -29,9 +95,24 @@ const DEPLOY_SUBCOMMAND: &str = "deploy";
 
 pub(crate) type CustomTypeSet = BTreeSet<CustomType>;
 
-/// OdraCli is a struct that represents the Odra CLI.
-///
-/// The Odra CLI is a command line interface that allows users to interact with the blockchain.
+pub mod scenario {
+    //! Traits and structs for defining custom scenarios.
+    //!
+    //! A scenario is a user-defined set of actions that can be run in the Odra CLI.
+    //! If you want to run a custom scenario that calls multiple entry points,
+    //! you need to implement the [Scenario] and [ScenarioMetadata] traits.
+    pub use crate::cmd::scenario::{Scenario, ScenarioArgs as Args, ScenarioError as Error, ScenarioMetadata};
+}
+
+pub mod deploy {
+    //! Traits and structs for defining deploy scripts.
+    //!
+    //! In a deploy script, you can define the contracts that you want to deploy to the blockchain
+    //! and write metadata to the container.
+    pub use crate::cmd::deploy::{DeployError as Error, DeployScript};
+}
+
+/// Command line interface for Odra smart contracts.
 pub struct OdraCli {
     main_cmd: Command,
     scenarios_cmd: Command,
@@ -42,6 +123,7 @@ pub struct OdraCli {
 }
 
 impl OdraCli {
+    /// Creates a new empty instance of the Odra CLI.
     pub fn new() -> Self {
         let contracts_cmd = Command::new(CONTRACTS_SUBCOMMAND)
             .about("Commands for interacting with contracts")
@@ -65,13 +147,16 @@ impl OdraCli {
         }
     }
 
-    /// Set the description of the CLI
+    /// Sets the description of the CLI
     pub fn about(mut self, about: &str) -> Self {
         self.main_cmd = self.main_cmd.about(about.to_string());
         self
     }
 
-    /// Add a contract to the CLI
+    /// Adds a contract to the CLI.
+    ///
+    /// Generates a subcommand for the contract with all of its entry points except the `init` entry point.
+    /// To call the constructor of the contract, implement and register the [DeployScript].
     pub fn contract<T: SchemaEntrypoints + SchemaCustomTypes + OdraContract>(mut self) -> Self {
         let contract_name = T::HostRef::ident();
         if let Ok(container) = DeployedContractsContainer::load() {
@@ -113,7 +198,9 @@ impl OdraCli {
         self
     }
 
-    /// Add a deploy script to the CLI
+    /// Adds a deploy script to the CLI.
+    ///
+    /// There is only one deploy script allowed in the CLI.
     pub fn deploy(mut self, script: impl DeployScript + 'static) -> Self {
         // register a subcommand for the deploy script
         self.main_cmd = self
@@ -124,7 +211,11 @@ impl OdraCli {
         self
     }
 
-    /// Add a scenario to the CLI
+    /// Adds a scenario to the CLI.
+    ///
+    /// Scenarios are user-defined commands that can be run from the CLI. If there
+    /// is a complex set of commands that need to be run in a specific order, a
+    /// scenario can be used to group them together.
     pub fn scenario<S: ScenarioMetadata + Scenario>(mut self, scenario: S) -> Self {
         // register a subcommand for the scenario
         let mut scenario_cmd = Command::new(S::NAME).about(S::DESCRIPTION);
@@ -144,14 +235,14 @@ impl OdraCli {
         self
     }
 
-    /// Build the CLI
+    /// Builds the CLI.
     pub fn build(mut self) -> Self {
         self.main_cmd = self.main_cmd.subcommand(self.contracts_cmd.clone());
         self.main_cmd = self.main_cmd.subcommand(self.scenarios_cmd.clone());
         self
     }
 
-    /// Run the CLI and parses the input
+    /// Runs the CLI and parses the input.
     pub fn run(self) {
         let matches = self.main_cmd.get_matches();
         let (cmd, args) = matches
@@ -180,7 +271,7 @@ impl OdraCli {
             .flatten()
             .expect("Subcommand not found");
 
-        match cmd.run(args, &self.host_env, &self.custom_types) {
+        match cmd.run(&self.host_env, args, &self.custom_types) {
             Ok(_) => prettycli::info("Command executed successfully"),
             Err(err) => prettycli::error(&format!("{:?}", err)),
         }

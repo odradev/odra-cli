@@ -20,24 +20,26 @@ impl OdraCommand for DeployCmd {
         DEPLOY_SUBCOMMAND
     }
 
-    fn run(&self, _args: &ArgMatches, env: &HostEnv, _types: &CustomTypeSet) -> Result<()> {
+    fn run(&self, env: &HostEnv, _args: &ArgMatches, _types: &CustomTypeSet) -> Result<()> {
         let mut container = DeployedContractsContainer::new()?;
-        self.script.deploy(&mut container, &env)?;
+        self.script.deploy(env, &mut container)?;
         Ok(())
     }
 }
 
-/// DeployScript is a trait that represents a deploy script.
+/// Script that deploys contracts to the blockchain and stores contract data for further use.
 ///
-/// In a deploy script, you can define the contracts that you want to deploy to the blockchain.
+/// In a deploy script, you can define the contracts that you want to deploy to the blockchain
+/// and write metadata to the container.
 pub trait DeployScript {
     fn deploy(
         &self,
-        container: &mut DeployedContractsContainer,
         env: &HostEnv,
+        container: &mut DeployedContractsContainer,
     ) -> core::result::Result<(), DeployError>;
 }
 
+/// Error that occurs during contract deployment.
 #[derive(Debug, Error)]
 pub enum DeployError {
     #[error("Deploy error: {message}")]

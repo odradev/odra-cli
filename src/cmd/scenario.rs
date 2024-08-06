@@ -1,7 +1,7 @@
 use std::{any::Any, collections::HashMap};
 
 use crate::{
-    container::ContractError, types, CommandArg, CustomTypeSet, DeployedContractsContainer,
+    args::CommandArg, container::ContractError, types, CustomTypeSet, DeployedContractsContainer,
 };
 use anyhow::Result;
 use clap::ArgMatches;
@@ -21,8 +21,8 @@ pub trait Scenario: Any {
     }
     fn run(
         &self,
-        container: DeployedContractsContainer,
         env: &HostEnv,
+        container: DeployedContractsContainer,
         args: ScenarioArgs,
     ) -> core::result::Result<(), ScenarioError>;
 }
@@ -49,12 +49,11 @@ impl OdraCommand for ScenarioCmd {
         &self.name
     }
 
-    fn run(&self, args: &ArgMatches, env: &HostEnv, _types: &CustomTypeSet) -> Result<()> {
+    fn run(&self, env: &HostEnv, args: &ArgMatches, _types: &CustomTypeSet) -> Result<()> {
         let container = DeployedContractsContainer::load()?;
-
         let args = ScenarioArgs::new(self.scenario.args(), args);
 
-        self.scenario.run(container, env, args)?;
+        self.scenario.run(env, container, args)?;
         Ok(())
     }
 }

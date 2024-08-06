@@ -37,13 +37,13 @@ impl OdraCommand for ContractCmd {
         &self.name
     }
 
-    fn run(&self, args: &ArgMatches, env: &HostEnv, types: &CustomTypeSet) -> Result<()> {
+    fn run(&self, env: &HostEnv, args: &ArgMatches, types: &CustomTypeSet) -> Result<()> {
         args.subcommand()
             .map(|(entrypoint_name, entrypoint_args)| {
                 self.commands
                     .iter()
                     .find(|cmd| cmd.name() == entrypoint_name)
-                    .map(|entry_point| entry_point.run(entrypoint_args, env, types))
+                    .map(|entry_point| entry_point.run(env, entrypoint_args, types))
                     .unwrap_or(Err(anyhow::anyhow!("No entry point found")))
             })
             .unwrap_or(Err(anyhow::anyhow!("No entry point found")))
@@ -63,7 +63,7 @@ impl OdraCommand for CallCmd {
         &self.entry_point.name
     }
 
-    fn run(&self, args: &ArgMatches, env: &HostEnv, types: &CustomTypeSet) -> Result<()> {
+    fn run(&self, env: &HostEnv, args: &ArgMatches, types: &CustomTypeSet) -> Result<()> {
         let entry_point = &self.entry_point;
         let contract_name = &self.contract_name;
 

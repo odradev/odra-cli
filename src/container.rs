@@ -23,7 +23,12 @@ pub enum ContractError {
     NotFound(String),
 }
 
-/// This struct represents a contract in the `deployed_contracts.toml` file.
+/// Struct representing the deployed contracts.
+///
+/// This struct is used to store the contracts name and address at the deploy time
+/// and to retrieve a reference to the contract at runtime.
+///
+/// The data is stored in a TOML file `deployed_contracts.toml` in the `{projet_root}/resources` directory.
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct DeployedContractsContainer {
     time: String,
@@ -31,7 +36,7 @@ pub struct DeployedContractsContainer {
 }
 
 impl DeployedContractsContainer {
-    /// Create new instance.
+    /// Creates a new instance.
     pub(crate) fn new() -> Result<Self, ContractError> {
         Self::handle_previous_version()?;
         let now: DateTime<Utc> = Utc::now();
@@ -41,7 +46,7 @@ impl DeployedContractsContainer {
         })
     }
 
-    /// Add contract to the list.
+    /// Adds a contract to the container.
     pub fn add_contract<T: HostRef + HasIdent>(
         &mut self,
         contract: &T,
@@ -51,6 +56,9 @@ impl DeployedContractsContainer {
         self.update()
     }
 
+    /// Gets reference to the contract.
+    ///
+    /// Returns a reference to the contract if it is found in the list, otherwise returns an error.
     pub fn get_ref<T: OdraContract + 'static>(
         &self,
         env: &HostEnv,
@@ -64,34 +72,13 @@ impl DeployedContractsContainer {
             .ok_or(ContractError::NotFound(T::HostRef::ident()))
     }
 
-    /// Return contract address.
+    /// Returns the contract address.
     pub fn address(&self, name: &str) -> Option<Address> {
         self.contracts
             .iter()
             .find(|c| c.name == name)
             .map(|c| Address::from_str(&c.package_hash).ok())
             .flatten()
-    }
-
-    /// Return creation time.
-    pub(crate) fn time(&self) -> &str {
-        &self.time
-    }
-
-    /// Update the file.
-    pub(crate) fn update(&self) -> Result<(), ContractError> {
-        let path = Self::file_path()?;
-        self.save_at(&path)
-    }
-
-    /// Save the file at the given path.
-    pub(crate) fn save_at(&self, file_path: &PathBuf) -> Result<(), ContractError> {
-        let content = toml::to_string_pretty(&self).map_err(ContractError::TomlSerialize)?;
-        let mut file = File::create(file_path).map_err(ContractError::Io)?;
-
-        file.write_all(content.as_bytes())
-            .map_err(ContractError::Io)?;
-        Ok(())
     }
 
     /// Load from the file.
@@ -118,6 +105,27 @@ impl DeployedContractsContainer {
             std::fs::remove_file(path).map_err(ContractError::Io)?;
         }
         Ok(())
+    }
+
+    /// Save the file at the given path.
+    fn save_at(&self, file_path: &PathBuf) -> Result<(), ContractError> {
+        let content = toml::to_string_pretty(&self).map_err(ContractError::TomlSerialize)?;
+        let mut file = File::create(file_path).map_err(ContractError::Io)?;
+
+        file.write_all(content.as_bytes())
+            .map_err(ContractError::Io)?;
+        Ok(())
+    }
+
+    /// Return creation time.
+    fn time(&self) -> &str {
+        &self.time
+    }
+
+    /// Update the file.
+    fn update(&self) -> Result<(), ContractError> {
+        let path = Self::file_path()?;
+        self.save_at(&path)
     }
 
     fn file_path() -> Result<PathBuf, ContractError> {
