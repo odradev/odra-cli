@@ -15,7 +15,7 @@ use crate::{types, CustomTypeSet};
 
 #[derive(Debug, Error)]
 pub enum ArgsError {
-    #[error("Invalid value: {0}")]
+    #[error("Invalid arg value: {0}")]
     TypesError(#[from] types::Error),
     #[error("Decoding error: {0}")]
     DecodingError(String),
@@ -328,7 +328,10 @@ pub fn decode<'a>(
             }
             decoded.pop();
             decoded.push_str("]");
-            Ok((to_json(&decoded)?, bytes))
+            match &**inner {
+                NamedCLType::Custom(_) => Ok((to_json(&decoded)?, bytes)),
+                _ => Ok((decoded, bytes)),
+            }
         }
         _ => {
             let result = types::from_bytes(&ty.0, bytes)?;
