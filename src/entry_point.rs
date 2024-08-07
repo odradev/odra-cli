@@ -1,4 +1,3 @@
-use anyhow::Result;
 use clap::ArgMatches;
 use odra::{
     casper_types::U512,
@@ -7,9 +6,23 @@ use odra::{
     CallDef,
 };
 
-use crate::{args, CustomTypeSet, DeployedContractsContainer};
+use crate::{args, container, types, CustomTypeSet, DeployedContractsContainer};
 
 pub const DEFAULT_GAS: u64 = 20_000_000_000;
+
+#[derive(Debug, thiserror::Error)]
+pub enum CallError {
+    #[error("Execution error: {0}")]
+    ExecutionError(String),
+    #[error(transparent)]
+    ArgsError(#[from] args::ArgsError),
+    #[error(transparent)]
+    TypesError(#[from] types::Error),
+    #[error("Contract not found")]
+    ContractNotFound,
+    #[error(transparent)]
+    ContractError(#[from] container::ContractError),
+}
 
 pub fn call(
     env: &HostEnv,
@@ -17,19 +30,19 @@ pub fn call(
     entry_point: &Entrypoint,
     args: &ArgMatches,
     types: &CustomTypeSet,
-) -> Result<String> {
-    let container = DeployedContractsContainer::load().expect("No deployed contracts found");
+) -> Result<String, CallError> {
+    let container = DeployedContractsContainer::load()?;
     let amount = args
         .try_get_one::<String>("__attached_value")
         .ok()
         .flatten()
-        .map(|s| U512::from_dec_str(s).unwrap())
-        .unwrap_or(U512::zero());
+        .map(|s| U512::from_dec_str(s).map_err(|_| types::Error::SerializationError))
+        .unwrap_or(Ok(U512::zero()))?;
 
-    let runtime_args = args::compose(&entry_point, args, types);
+    let runtime_args = args::compose(&entry_point, args, types)?;
     let contract_address = container
         .address(contract_name)
-        .expect("Contract not found");
+        .ok_or(CallError::ContractNotFound)?;
 
     let method = &entry_point.name;
     let is_mut = entry_point.is_mutable;
@@ -40,14 +53,9 @@ pub fn call(
     if is_mut {
         env.set_gas(DEFAULT_GAS);
     }
-    env.raw_call_contract(contract_address, call_def, use_proxy)
-        .map(|bytes| args::decode(bytes.inner_bytes(), ty, types).0)
-        .map_err(|e| anyhow::anyhow!("Error: {:?}", e))
-    // match result {
-    //     Ok(value) => {
-    //         prettycli::info("Result");
-    //         prettycli::info(&value);
-    //     }
-    //     Err(e) => prettycli::error(&format!("Error: {:?}", e)),
-    // }
+    let bytes = env
+        .raw_call_contract(contract_address, call_def, use_proxy)
+        .map_err(|e| CallError::ExecutionError(format!("{:?}", e)))?;
+    let result = args::decode(bytes.inner_bytes(), ty, types)?;
+    Ok(result.0)
 }

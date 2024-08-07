@@ -67,6 +67,8 @@ pub enum ScenarioError {
     ContractReadError(#[from] ContractError),
     #[error("Arg error")]
     ArgError(#[from] ArgError),
+    #[error("Types error")]
+    TypesError(#[from] types::Error),
 }
 
 impl From<OdraError> for ScenarioError {
@@ -117,7 +119,7 @@ impl ScenarioArgs {
 
         let result = match arg {
             ScenarioArg::Single(value) => {
-                let bytes = types::into_bytes(&T::ty(), value);
+                let bytes = types::into_bytes(&T::ty(), value)?;
                 T::from_bytes(&bytes)
                     .map_err(|_| ArgError::Deserialization)
                     .map(|t| t.0)
@@ -135,19 +137,22 @@ impl ScenarioArgs {
             .0
             .get(name)
             .ok_or(ArgError::MissingArg(name.to_string()))?;
-        let result = match arg {
+        match arg {
             ScenarioArg::Many(values) => values
                 .into_iter()
                 .map(|value| {
                     let bytes = types::into_bytes(&T::ty(), &value);
-                    T::from_bytes(&bytes)
-                        .map_err(|_| ArgError::Deserialization)
-                        .map(|t| t.0)
+                    bytes
+                        .map_err(|e| ScenarioError::TypesError(e))
+                        .and_then(|bytes| {
+                            T::from_bytes(&bytes)
+                                .map_err(|_| ScenarioError::ArgError(ArgError::Deserialization))
+                                .map(|t| t.0)
+                        })
                 })
-                .collect::<Result<Vec<T>, ArgError>>(),
-            ScenarioArg::Single(_) => Err(ArgError::ManyExpected),
-        }?;
-        Ok(result)
+                .collect::<Result<Vec<T>, ScenarioError>>(),
+            ScenarioArg::Single(_) => Err(ScenarioError::ArgError(ArgError::ManyExpected)),
+        }
     }
 }
 

@@ -5,7 +5,7 @@
 //!
 //! ## Example
 //! ```
-//! use odra::prelude::*;
+//! use odra::{host::Deployer, prelude::*};
 //!
 //! #[odra::module]
 //! struct MyContract;
@@ -19,12 +19,12 @@
 //!
 //! struct Deploy;
 //!
-//! impl odra_cli::DeployScript for Deploy {
+//! impl odra_cli::deploy::DeployScript for Deploy {
 //!     fn deploy(
 //!         &self,
 //!         env: &odra::host::HostEnv,
 //!         container: &mut odra_cli::DeployedContractsContainer
-//!     ) -> Result<(), odra_cli::DeployError> {
+//!     ) -> Result<(), odra_cli::deploy::Error> {
 //!         env.set_gas(50_000_000_000);
 //!
 //!         let office = MyContract::try_deploy(env, odra::host::NoArgs)?;
@@ -36,19 +36,19 @@
 //!
 //! struct MyScenario;
 //!
-//! impl odra_cli::ScenarioMetadata for MyScenario {
+//! impl odra_cli::scenario::ScenarioMetadata for MyScenario {
 //!     const NAME: &'static str = "my-scenario";
 //!
 //!     const DESCRIPTION: &'static str = "My custom scenario";
 //! }
 //!
-//! impl odra_cli::Scenario for MyScenario {
+//! impl odra_cli::scenario::Scenario for MyScenario {
 //!      fn run(
 //!         &self,
 //!         env: &odra::host::HostEnv,
 //!         container: odra_cli::DeployedContractsContainer,
-//!         args: odra_cli::ScenarioArgs
-//!      ) -> Result<(), odra_cli::ScenarioError> {
+//!         args: odra_cli::scenario::Args
+//!      ) -> Result<(), odra_cli::scenario::Error> {
 //!        Ok(())
 //!      }
 //! }
@@ -83,10 +83,12 @@ mod args;
 mod cmd;
 mod container;
 mod entry_point;
+#[cfg(test)]
+mod test_utils;
 mod types;
 
-pub use container::DeployedContractsContainer;
 pub use args::CommandArg;
+pub use container::DeployedContractsContainer;
 use scenario::{Scenario, ScenarioMetadata};
 
 const CONTRACTS_SUBCOMMAND: &str = "contract";
@@ -101,7 +103,9 @@ pub mod scenario {
     //! A scenario is a user-defined set of actions that can be run in the Odra CLI.
     //! If you want to run a custom scenario that calls multiple entry points,
     //! you need to implement the [Scenario] and [ScenarioMetadata] traits.
-    pub use crate::cmd::scenario::{Scenario, ScenarioArgs as Args, ScenarioError as Error, ScenarioMetadata};
+    pub use crate::cmd::scenario::{
+        Scenario, ScenarioArgs as Args, ScenarioError as Error, ScenarioMetadata,
+    };
 }
 
 pub mod deploy {

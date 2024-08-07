@@ -9,32 +9,64 @@ use odra::{
     schema::casper_contract_schema::NamedCLType,
     Address,
 };
+use thiserror::Error;
+
+#[derive(Debug, Error)]
+pub enum Error {
+    #[error("Invalid hex string")]
+    InvalidHexString,
+    #[error("Hex decode error")]
+    HexDecodeError,
+    #[error("Parse error: {0}")]
+    ParseError(String),
+    #[error("BigUint error: {0}")]
+    BigUintError(String),
+    #[error("Serialization error")]
+    SerializationError,
+    #[error("Deserialization error")]
+    DeserializationError,
+    #[error("Invalid URef")]
+    InvalidURef,
+    #[error("Invalid public key")]
+    InvalidPublicKey,
+    #[error("Formatting error: {0}")]
+    Formatting(String),
+    #[error("Unexpected error: {0}")]
+    Other(String),
+}
+
+type TypeResult<T> = Result<T, Error>;
 
 macro_rules! call_from_bytes {
     ($ty:ty, $value:ident) => {
         <$ty as FromBytes>::from_bytes($value)
             .map(|(v, rem)| (v.to_string(), rem))
-            .unwrap()
+            .map_err(|_| Error::SerializationError)
     };
 }
 
 macro_rules! call_to_bytes {
     ($ty:ty, $value:ident) => {
-        parse_value::<$ty>($value).to_bytes().unwrap()
+        parse_value::<$ty>($value)?
+            .to_bytes()
+            .map_err(|_| Error::SerializationError)
     };
 }
 
 macro_rules! big_int_to_bytes {
     ($ty:ident, $value:ident) => {
-        $ty::from_dec_str($value).unwrap().to_bytes().unwrap()
+        $ty::from_dec_str($value)
+            .map_err(|_| Error::BigUintError($value.to_string()))?
+            .to_bytes()
+            .map_err(|_| Error::SerializationError)
     };
 }
 
-fn parse_value<T: FromStr>(value: &str) -> T
+pub(crate) fn parse_value<T: FromStr>(value: &str) -> TypeResult<T>
 where
     <T as FromStr>::Err: Debug,
 {
-    <T as FromStr>::from_str(value).unwrap()
+    <T as FromStr>::from_str(value).map_err(|_| Error::ParseError(value.to_string()))
 }
 
 pub(crate) fn named_cl_type_to_cl_type(ty: &NamedCLType) -> CLType {
@@ -78,18 +110,22 @@ pub(crate) fn named_cl_type_to_cl_type(ty: &NamedCLType) -> CLType {
     }
 }
 
-pub(crate) fn vec_into_bytes(ty: &NamedCLType, input: Vec<&str>) -> Vec<u8> {
+pub(crate) fn vec_into_bytes(ty: &NamedCLType, input: Vec<&str>) -> TypeResult<Vec<u8>> {
     let mut result = vec![];
 
-    result.append(&mut (input.len() as u32).to_bytes().unwrap());
+    result.append(
+        &mut (input.len() as u32)
+            .to_bytes()
+            .map_err(|_| Error::SerializationError)?,
+    );
 
     for value in input {
-        result.extend(into_bytes(ty, &value));
+        result.extend(into_bytes(ty, &value)?);
     }
-    result
+    Ok(result)
 }
 
-pub(crate) fn into_bytes(ty: &NamedCLType, input: &str) -> Vec<u8> {
+pub(crate) fn into_bytes(ty: &NamedCLType, input: &str) -> TypeResult<Vec<u8>> {
     match ty {
         NamedCLType::Bool => call_to_bytes!(bool, input),
         NamedCLType::I32 => call_to_bytes!(i32, input),
@@ -102,63 +138,101 @@ pub(crate) fn into_bytes(ty: &NamedCLType, input: &str) -> Vec<u8> {
         NamedCLType::U512 => big_int_to_bytes!(U512, input),
         NamedCLType::String => call_to_bytes!(String, input),
         NamedCLType::Key => call_to_bytes!(Address, input),
-        NamedCLType::URef => URef::from_formatted_str(input).unwrap().to_bytes().unwrap(),
-        NamedCLType::PublicKey => PublicKey::from_hex(input).unwrap().to_bytes().unwrap(),
+        NamedCLType::URef => URef::from_formatted_str(input)
+            .map_err(|_| Error::InvalidURef)?
+            .to_bytes()
+            .map_err(|_| Error::SerializationError),
+        NamedCLType::PublicKey => PublicKey::from_hex(input)
+            .map_err(|_| Error::InvalidPublicKey)?
+            .to_bytes()
+            .map_err(|_| Error::SerializationError),
         NamedCLType::Option(ty) => {
             if input.is_empty() {
-                vec![OPTION_NONE_TAG]
+                Ok(vec![OPTION_NONE_TAG])
             } else {
                 let mut result = vec![OPTION_NONE_TAG];
-                result.extend(into_bytes(ty, input));
-                result
+                result.extend(into_bytes(ty, input)?);
+                Ok(result)
             }
         }
         NamedCLType::Result { ok, err } => {
+            // TODO: fix this - handles only err OR ok not both
             let mut result = vec![];
             if input.starts_with("err:") {
                 let value = input.strip_prefix("err:").unwrap();
                 result.push(RESULT_ERR_TAG);
-                result.extend(into_bytes(err, &value));
+                result.extend(into_bytes(err, &value)?);
             } else if input.starts_with("ok:") {
                 let value = input.strip_prefix("ok:").unwrap();
                 result.push(RESULT_OK_TAG);
-                result.extend(into_bytes(ok, &value));
+                result.extend(into_bytes(ok, &value)?);
             } else {
-                panic!("Invalid variant");
+                return Err(Error::Formatting("Invalid variant".to_string()));
             }
-            result
+            Ok(result)
         }
         NamedCLType::Tuple1(ty) => into_bytes(&ty[0], input),
         NamedCLType::Tuple2(ty) => {
             let parts = input.split(',').collect::<Vec<_>>();
             let mut result = vec![];
-            result.extend(into_bytes(&ty[0], parts[0]));
-            result.extend(into_bytes(&ty[1], parts[1]));
-            result
+            result.extend(into_bytes(&ty[0], parts[0])?);
+            result.extend(into_bytes(&ty[1], parts[1])?);
+            Ok(result)
         }
         NamedCLType::Tuple3(ty) => {
             let parts = input.split(',').collect::<Vec<_>>();
             let mut result = vec![];
-            result.extend(into_bytes(&ty[0], parts[0]));
-            result.extend(into_bytes(&ty[1], parts[1]));
-            result.extend(into_bytes(&ty[2], parts[2]));
-            result
+            result.extend(into_bytes(&ty[0], parts[0])?);
+            result.extend(into_bytes(&ty[1], parts[1])?);
+            result.extend(into_bytes(&ty[2], parts[2])?);
+            Ok(result)
         }
-        NamedCLType::Unit => vec![],
+        NamedCLType::Unit => Ok(vec![]),
         NamedCLType::Map { key, value } => {
+            let parts = input
+                .split(',')
+                .map(|part| part.split(':').collect::<Vec<_>>())
+                .collect::<Vec<_>>();
+
             todo!();
         }
         NamedCLType::List(ty) => {
+            let parts = input.split(',').collect::<Vec<_>>();
             todo!();
         }
-        NamedCLType::ByteArray(_) => {
-            todo!();
+        NamedCLType::ByteArray(n) => {
+            match parse_hex(input) {
+                Ok(data) => Ok(data),
+                Err(Error::InvalidHexString) => {
+                    let parts = input.split(',').collect::<Vec<_>>();
+                    let bytes = parts
+                        .iter()
+                        .map(|part| part.parse::<u8>())
+                        .collect::<Vec<_>>();
+                    let bytes2 = parts
+                        .iter()
+                        .map(|part| parse_hex(input))
+                        .collect::<Vec<_>>();
+                    Ok(vec![])
+                }
+                Err(e) => Err(e),
+            }
+            // match input.strip_prefix("0x") {
+            //     Some(data) => {
+            //         let bytes = hex::decode(data).unwrap();
+            //         bytes
+            //     }
+            //     None => {
+            //         let parts = input.split(',').collect::<Vec<_>>();
+            //         todo!();
+            //     }
+            // }
         }
         NamedCLType::Custom(_) => unreachable!("should not be here"),
     }
 }
 
-pub(crate) fn from_bytes<'a>(ty: &NamedCLType, input: &'a [u8]) -> (String, &'a [u8]) {
+pub(crate) fn from_bytes<'a>(ty: &NamedCLType, input: &'a [u8]) -> TypeResult<(String, &'a [u8])> {
     match ty {
         NamedCLType::Bool => call_from_bytes!(bool, input),
         NamedCLType::I32 => call_from_bytes!(i32, input),
@@ -175,7 +249,7 @@ pub(crate) fn from_bytes<'a>(ty: &NamedCLType, input: &'a [u8]) -> (String, &'a 
         NamedCLType::PublicKey => call_from_bytes!(PublicKey, input),
         NamedCLType::Option(ty) => {
             if input.get(0) == Some(&OPTION_NONE_TAG) {
-                return ("null".to_string(), input);
+                Ok(("null".to_string(), input))
             } else {
                 from_bytes(&*ty, &input[1..])
             }
@@ -184,35 +258,35 @@ pub(crate) fn from_bytes<'a>(ty: &NamedCLType, input: &'a [u8]) -> (String, &'a 
             let (variant, rem) = u8::from_bytes(input).unwrap();
             match variant {
                 RESULT_ERR_TAG => {
-                    let (value, rem) = from_bytes(err, rem);
-                    (format!("Err({})", value), rem)
+                    let (value, rem) = from_bytes(err, rem)?;
+                    Ok((format!("Err({})", value), rem))
                 }
                 RESULT_OK_TAG => {
-                    let (value, rem) = from_bytes(ok, rem);
-                    (format!("Ok({})", value), rem)
+                    let (value, rem) = from_bytes(ok, rem)?;
+                    Ok((format!("Ok({})", value), rem))
                 }
-                _ => panic!("Invalid variant"),
+                _ => Err(Error::Other("Invalid variant".to_string())),
             }
         }
         NamedCLType::Tuple1(ty) => {
-            let v = from_bytes(&ty[0], input);
-            (format!("({},)", v.0), v.1)
+            let v = from_bytes(&ty[0], input)?;
+            Ok((format!("({},)", v.0), v.1))
         }
         NamedCLType::Tuple2(ty) => {
-            let (v1, rem) = from_bytes(&ty[0], input);
-            let (v2, rem) = from_bytes(&ty[1], rem);
-            (format!("({}, {})", v1, v2), rem)
+            let (v1, rem) = from_bytes(&ty[0], input)?;
+            let (v2, rem) = from_bytes(&ty[1], rem)?;
+            Ok((format!("({}, {})", v1, v2), rem))
         }
         NamedCLType::Tuple3(ty) => {
-            let (v1, rem) = from_bytes(&ty[0], input);
-            let (v2, rem) = from_bytes(&ty[1], rem);
-            let (v3, rem) = from_bytes(&ty[2], rem);
-            (format!("({}, {}, {})", v1, v2, v3), rem)
+            let (v1, rem) = from_bytes(&ty[0], input)?;
+            let (v2, rem) = from_bytes(&ty[1], rem)?;
+            let (v3, rem) = from_bytes(&ty[2], rem)?;
+            Ok((format!("({}, {}, {})", v1, v2, v3), rem))
         }
         NamedCLType::Unit => <() as FromBytes>::from_bytes(input)
             .map(|(v, rem)| ("".to_string(), rem))
-            .unwrap(),
-        NamedCLType::Custom(_) => unreachable!("should not be here"),
+            .map_err(|_| Error::DeserializationError),
+
         NamedCLType::List(ty) => {
             todo!();
         }
@@ -222,5 +296,13 @@ pub(crate) fn from_bytes<'a>(ty: &NamedCLType, input: &'a [u8]) -> (String, &'a 
         NamedCLType::Map { key, value } => {
             todo!();
         }
+        NamedCLType::Custom(_) => unreachable!("should not be here"),
+    }
+}
+
+fn parse_hex(input: &str) -> TypeResult<Vec<u8>> {
+    match input.strip_prefix("0x") {
+        Some(data) => hex::decode(data).map_err(|_| Error::HexDecodeError),
+        None => Err(Error::InvalidHexString),
     }
 }
