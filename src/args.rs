@@ -2,10 +2,7 @@ use std::str::FromStr;
 
 use clap::{Arg, ArgAction, ArgMatches};
 use odra::{
-    casper_types::{
-        bytesrepr::{FromBytes, ToBytes},
-        CLType, CLValue, RuntimeArgs,
-    },
+    casper_types::{CLType, CLValue, RuntimeArgs},
     schema::casper_contract_schema::{Argument, CustomType, Entrypoint, NamedCLType, Type},
 };
 use serde_json::Value;
@@ -216,11 +213,22 @@ impl<'a> ComposedArg<'a> {
             return Ok(());
         }
         let size = self.values[0].1.len();
-        buffer.extend(
-            (size as u32)
-                .to_bytes()
-                .map_err(|_| ArgsError::DecodingError("Invalid length".to_string()))?,
-        );
+
+        // check if all values have the same length
+        let equals_len = self
+            .values
+            .iter()
+            .map(|(_, vec)| vec.len())
+            .all(|len| len == size);
+
+        if !equals_len {
+            return Err(ArgsError::DecodingError(format!(
+                "Not equal args length for the list {}",
+                self.name
+            )));
+        }
+
+        buffer.extend(types::_to_bytes(size as u32)?);
 
         for i in 0..size {
             for (ty, values) in &self.values {
@@ -318,8 +326,7 @@ pub fn decode<'a>(
             let mut bytes = bytes;
             let mut decoded = "[".to_string();
 
-            let (len, rem) = u32::from_bytes(bytes)
-                .map_err(|_| ArgsError::DecodingError("Invalid length".to_string()))?;
+            let (len, rem) = types::_from_bytes::<u32>(bytes)?;
             bytes = rem;
             for _ in 0..len {
                 let (value, rem) = decode(bytes, &ty, types)?;

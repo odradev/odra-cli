@@ -378,12 +378,12 @@ fn parse_hex(input: &str) -> TypeResult<Vec<u8>> {
 }
 
 #[inline]
-fn _from_bytes<T: FromBytes>(input: &[u8]) -> TypeResult<(T, &[u8])> {
+pub(crate) fn _from_bytes<T: FromBytes>(input: &[u8]) -> TypeResult<(T, &[u8])> {
     T::from_bytes(input).map_err(|_| Error::DeserializationError)
 }
 
 #[inline]
-fn _to_bytes<T: ToBytes>(input: T) -> TypeResult<Vec<u8>> {
+pub(crate) fn _to_bytes<T: ToBytes>(input: T) -> TypeResult<Vec<u8>> {
     input.to_bytes().map_err(|_| Error::SerializationError)
 }
 
