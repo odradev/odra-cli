@@ -223,7 +223,7 @@ impl<'a> ComposedArg<'a> {
 
         if !equals_len {
             return Err(ArgsError::DecodingError(format!(
-                "Not equal args length for the list {}",
+                "Not equal args length for the list `{}`",
                 self.name
             )));
         }
