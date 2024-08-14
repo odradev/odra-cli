@@ -3,16 +3,15 @@ name = "odra-cli"
 version = "0.1.0"
 edition = "2021"
 
-
 [dependencies]
 clap = { version = "4.5.4", features = ["derive", "cargo", "string"] }
 prettycli = "0.1.1"
 odra = { git = "https://github.com/odradev/odra", branch = "release/1.3.0", features = [], default-features = false }
 odra-casper-livenet-env = { git = "https://github.com/odradev/odra", branch = "release/1.3.0" }
 chrono = { version = "0.4", features = ["serde"] }
-serde = { version = "=1.0.195", default-features = false }
-serde_json = { version = "=1.0.113", default-features = false }
-serde_derive = { version = "=1.0.195", features = ["default"] }
+serde = { version = "1", default-features = false }
+serde_json = { version = "1", default-features = false }
+serde_derive = { version = "1", features = ["default"] }
 toml = "0.8.13"
 project-root = "0.2.2"
 pretty_assertions = "1.4.0"
