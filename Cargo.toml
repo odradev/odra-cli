@@ -4,10 +4,10 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-clap = { version = "4.5.4", features = ["derive", "cargo", "string"] }
+clap = { version = "4.4.18", features = ["derive", "cargo", "string"] }
 prettycli = "0.1.1"
-odra = { version = "1.3.0", features = [], default-features = false }
-odra-casper-livenet-env = { version = "1.3.0" }
+odra = { git = "https://github.com/odradev/odra", branch="feature/casper-2.0-rust-sdk", features = [], default-features = false }
+odra-casper-livenet-env = { git = "https://github.com/odradev/odra", branch="feature/casper-2.0-rust-sdk" }
 chrono = { version = "0.4", features = ["serde"] }
 serde = { version = "1", default-features = false }
 serde_json = { version = "1", default-features = false }
@@ -18,3 +18,6 @@ pretty_assertions = "1.4.0"
 anyhow = "1.0.86"
 thiserror = "1.0.30"
 hex = "0.4.3"
+
+[patch.crates-io]
+casper-types = { version = "5.0.0", git = "https://github.com/casper-network/casper-node", branch = "rustSDK-feat-2.0" }
