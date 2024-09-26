@@ -17,7 +17,7 @@ pub enum ContractError {
     TomlSerialize(#[from] toml::ser::Error),
     #[error("Invalid TOML")]
     TomlDeserialize(#[from] toml::de::Error),
-    #[error("Couldn't read file")]
+    #[error("Couldn't read file: {0}")]
     Io(#[from] std::io::Error),
     #[error("Couldn't {0} find contract")]
     NotFound(String),
